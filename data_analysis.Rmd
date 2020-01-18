@@ -1,0 +1,410 @@
+---
+title: "Analysis of farmers market"
+author: "Athul Sony"
+output: html_document
+---
+#### Section:     04
+#### Course ID:   IE6600 18587
+
+
+```{r setup, include=FALSE}
+
+library(dplyr)
+library(ggplot2)
+library(scales)
+library(stringr)
+library(tidyr)
+library(maps)
+library(viridis)
+library(lubridate)
+knitr::opts_knit$set(root.dir = "C:/Users/athul/Downloads")
+
+```
+
+```{r}
+data <- read.csv('farmers_market_info.csv',stringsAsFactors = F,na.strings = c('',' ','NA','-'))
+```
+
+## Question 1
+
+```{r}
+
+ # Distribution of farmers markets per region
+
+east <- c('Connecticut','Delaware','Florida','Georgia','Florida','Maine','Maryland','Massachusetts',
+          'New Hampshire','New Jersey','New York','North Carolina','Rhode Island','South Carolina',
+          'Virginia','Pennsylvania','Vermont')
+
+west <- c('Alaska','California','Hawaii','Oregon','Washington','Nevada')
+
+south <- c('Arizona','New Mexico','Texas','Oklahoma','Louisiana','Arkansas','Alabama','Tennessee','Georgia',
+           'South Carolina','West Virginia','Virginia','Mississipppi')
+
+centre <- c('Colorado','Utah','Kansas','Wyoming','Nebraska','Missouri','Illinois','Iowa',
+            'Ohio','West Virginia','Indiana','Kentucky')
+
+north <- c('Montana','Idaho','North Dakota','Minnesota','Wisconsin','Michigan')
+
+data %>% 
+  mutate(Region = ifelse(State %in% east,'East',
+                  ifelse(State %in% west,'West',
+                  ifelse(State %in% south,'South',
+                  ifelse(State %in% north,'North',
+                  'Central'))))) %>% 
+  group_by(Region) %>% 
+  summarise(Count = n()) %>% 
+  ggplot(aes(x=reorder(Region,Count),y=Count)) +
+  geom_bar(stat='identity',fill='royalblue4') +
+  xlab('Region') +
+  ylab('Number of markets') +
+  geom_text(aes(label = Count),color='white',vjust = 1,size = 3) +
+  ggtitle('Distribution of farmers markets per region') +
+  theme(plot.title = element_text(hjust=0.5,size=16))
+
+```
+
+## Question 2
+
+```{r}
+
+  # Number of markets per season per year
+
+pattern1 = 'January|February|March|April|May|June|July|August|September|October|November|December'
+
+temp_five <- rbind(data %>% 
+       select(FMID,Season1Date) %>% 
+       filter(str_detect(Season1Date,pattern1) & nchar(Season1Date)> 25) %>% 
+    select(FMID,Season = Season1Date),
+data %>% 
+  select(FMID,Season2Date) %>% 
+  filter(str_detect(Season2Date,pattern1) & 
+           nchar(Season2Date)> 25) %>% 
+  select(FMID,Season = Season2Date),
+data %>% 
+  select(FMID,Season3Date) %>% 
+  filter(str_detect(Season3Date,pattern1) & 
+           nchar(Season3Date)> 25) %>% 
+  select(FMID,Season = Season3Date),
+data %>% 
+  select(FMID,Season4Date) %>% 
+  filter(str_detect(Season4Date,pattern1) & 
+           nchar(Season4Date)> 25) %>% 
+  select(FMID,Season = Season4Date))
+
+for(i in 1:length(temp_five$FMID)){
+  temp_five$Season[i] = str_replace(temp_five$Season[i],'Oct\\. |Oct ','October')
+  temp_five$Season[i] = str_replace(temp_five$Season[i],'Sept\\. |Sept ','September')
+  temp_five$start_date[i] =str_split(temp_five$Season[i],' to')[[1]][1]
+  temp_five$end_date[i] = str_split(temp_five$Season[i],' to')[[1]][2]
+}
+
+temp_five <- temp_five %>% 
+  filter(nchar(end_date) > 10) %>% 
+  mutate(start_month = str_sub(mdy(start_date),6,7),
+         start_year = str_sub(mdy(start_date),1,4),
+         end_month =  str_sub(mdy(end_date),6,7),
+         end_year =  str_sub(mdy(start_date),1,4)) %>% 
+  mutate(Season = str_c(start_month,'/01/',start_year,' to ',end_month,'/01/',end_year)) %>% 
+  select(FMID,Season)
+
+pattern2 = '((?:[A-Z|a-z][a-z]+))(\\s+)(to)(\\s+)((?:[A-Z|a-z][a-z]+))'
+
+temp_four <- rbind(
+  data %>% 
+    filter(!str_detect(Season1Date,pattern2)) %>% 
+    filter(nchar(Season1Date) ==24) %>% 
+    select(FMID,Season =Season1Date),
+  
+  data %>% 
+    filter(!str_detect(Season2Date,pattern2)) %>% 
+    filter(nchar(Season2Date) ==24) %>% 
+    select(FMID,Season = Season2Date),
+  
+  data %>% 
+    filter(!str_detect(Season3Date,pattern2)) %>% 
+    filter(nchar(Season3Date) ==24) %>% 
+    select(FMID,Season =Season3Date),
+  
+  data %>% 
+    filter(!str_detect(Season4Date,pattern2)) %>% 
+    filter(nchar(Season4Date) ==24) %>% 
+    select(FMID,Season =Season4Date))
+
+temp_four = rbind(temp_four,temp_five)
+temp <- data.frame(temp = matrix(ncol=6,nrow = 0))
+colnames(temp)= c('FMID','Season','start_month','start_year','end_month','end_year')
+seasonal <- list('Winter','Winter','Spring','Spring','Spring','Summer','Summer','Summer','Fall','Fall','Fall','Winter')
+
+for(i in 1:length(temp_four$FMID)){
+  temp_four$start_month[i] = str_extract(temp_four$Season[i],'[0-9]{1,2}')
+  temp_four$start_year[i] = str_extract(temp_four$Season[i],'[0-9]{4}')
+  temp_four$end_month[i] = str_trim(str_extract(temp_four$Season[i],'(\\s+)([0-9]{1,2})'),side = 'both')
+  temp_four$end_year[i] = tail(str_extract_all(temp_four$Season[i],'[0-9]{4}')[[1]],n=1)
+  if(temp_four$start_year[i] == temp_four$end_year[i] & temp_four$start_month[i] != temp_four$end_month[i]){
+    start = as.numeric(temp_four$start_month[i])
+    end = as.numeric(temp_four$end_month[i])
+    while(start < end){
+      temp= rbind(temp,data.frame(FMID = temp_four$FMID[i], Season = temp_four$Season[i], start_month = start+1, start_year = temp_four$start_year[i],end_month = end+1, end_year = str_c(temp_four$end_year[i],'!')))
+      start = start + 1
+    }
+  }
+}
+
+result <- rbind(temp_four,temp)
+
+for(x in 1:length(result$FMID)){
+  result$start_month[x] = seasonal[[as.numeric(result$start_month[x])]]
+  
+}
+
+result%>% 
+  group_by(FMID,start_month,start_year) %>% 
+  summarise(Count = n()) %>% 
+  group_by(start_month,start_year) %>% 
+  summarise(Count = n()) %>% 
+  ggplot(aes(x = start_year,y=Count,fill = start_month )) + 
+  geom_bar(stat='identity') +
+  scale_y_continuous(name='Number of markets',
+                     trans='log10',breaks=trans_breaks('log10',function(x)10^x),labels=trans_format('log10',math_format(10^.x))) +
+  xlab('Year') +
+  labs(fill = 'Season') +
+  scale_fill_brewer(palette = 'Set2') +
+  ggtitle('Number of markets per season per year') +
+  theme(plot.title = element_text(hjust=0.5,size =16))
+
+```
+
+## Question 3
+
+```{r}
+
+  # Distribution of items in each product category
+
+animal_products = c('Eggs','Seafood','Honey','Meat','Poultry','PetFood')
+diary_products = c('Cheese','Tofu')
+plant_products = c('Flowers','Herbs','Nursery','Organic','Vegetables','Jams','Maple','Nuts','Plants','Trees','Beans','Fruits','Grains',                     'Juices','Mushrooms','WildHarvested')
+beverages = c('Wine','Coffee')
+toiletries = c('Soap')
+bakery = c('Bakedgoods','Prepared')
+
+temp_three <- data %>%
+  gather('Product','Value',29:58) %>% 
+  mutate(Product_category = 
+           ifelse(Product %in% animal_products,'Animal Products',
+           ifelse(Product %in% diary_products,'Dairy Products',
+           ifelse(Product %in% plant_products,'Plant Products',
+           ifelse(Product %in% beverages,'Beverages',
+           ifelse(Product %in% toiletries,'Toiletries',
+           ifelse(Product %in% bakery,'Bakery','Crafts'))))))) 
+
+temp_three%>% 
+  group_by(Product_category,Product) %>% 
+  summarise(Count = n()) %>%
+  select(Product_category,Product) %>% 
+  group_by(Product_category) %>% 
+  summarise(Count = n()) %>% 
+  ggplot(aes(x = reorder(Product_category,Count),y = factor(Count))) + geom_bar(stat='identity',fill='royalblue4') +
+  coord_flip() +
+  xlab('Product Categories') +
+  ylab('Number of items') +
+  ggtitle('Distribution of items in each product category') +
+  theme(plot.title = element_text(hjust=0.5,size = 16))
+
+   # Scenario in Boston
+
+rbind(temp_three %>% 
+        select(State,Product,Value,Product_category,city,MarketName) %>% 
+        filter(city == 'Boston',Product_category=='Bakery',Value=='Y'),
+      temp_three %>% 
+        select(State,Product,Value,Product_category,city,MarketName) %>% 
+        filter(city == 'Boston',Product_category=='Beverages',Value=='Y'),
+      temp_three %>% 
+        select(State,Product,Value,Product_category,city,MarketName) %>% 
+        filter(State == 'Massachusetts',city == 'Boston',Product_category=='Animal Products',Value=='Y'),
+      temp_three %>% 
+        select(State,Product,Value,Product_category,city,MarketName) %>% 
+        filter(city == 'Boston',Product_category=='Plant Products',Value=='Y'),
+      temp_three %>% 
+        select(State,Product,Value,Product_category,city,MarketName) %>% 
+        filter(city == 'Boston',Product_category=='Dairy products',Value=='Y'),
+      temp_three %>% 
+        select(State,Product,Value,Product_category,city,MarketName) %>% 
+        filter(city == 'Boston',Product_category=='Toiletries',Value=='Y'),
+      temp_three %>% 
+        select(State,Product,Value,Product_category,city,MarketName) %>% 
+        filter(city == 'Boston',Product_category=='Crafts',Value=='Y')) %>%
+  group_by(Product_category) %>% 
+  summarise(Count = n()) %>% 
+  mutate(Proportion = round(Count/sum(Count) * 100,digits = 1)) %>% 
+  arrange(desc(Proportion)) %>% 
+  ggplot(aes(x = '', y = Proportion, fill=Product_category)) + 
+  geom_bar(width = 1, stat='identity',color='white') +
+  coord_polar('y',start=0) +
+  scale_fill_brewer(palette = 'Set2') +
+  geom_text(aes(label = Proportion),position = position_stack(vjust=0.5),color = 'black',size = 2) +
+  theme_void() +
+  labs(fill= 'Product Category') +
+  ggtitle('Farmers markets in Boston') +
+  theme(plot.title = element_text(hjust=0.5,size = 16))
+
+ # which state hosts the maximum and the minimum number of markets that sells each product category
+
+rbind(temp_three %>% 
+             select(State,Product,Value,Product_category,city,MarketName) %>% 
+             filter(Value == 'Y') %>% 
+             group_by(State,Product_category) %>% 
+             summarise(Count = n()) %>% 
+             group_by(Product_category) %>% 
+             filter(Count == max(Count)),
+       temp_three %>% 
+             select(State,Product,Value,Product_category,city,MarketName) %>% 
+             filter(Value == 'Y') %>% 
+             group_by(State,Product_category) %>% 
+             summarise(Count = n()) %>% 
+             group_by(Product_category) %>% 
+             filter(Count == min(Count))) %>% 
+  ggplot(aes(x = reorder(Product_category,as.numeric(Count)),y=as.numeric(Count),fill=State)) +
+  geom_bar(stat='identity',position = position_dodge(0.9)) +
+  scale_y_continuous(name='Number of markets',
+                     trans='log10',breaks=trans_breaks('log10',function(x)10^x),labels=trans_format('log10',math_format(10^.x))) +
+  ggtitle('Maximum and minimum number of markets per product catgeory') +
+  scale_fill_brewer(palette = 'Set2') +
+  xlab('Product Category') +
+  theme(axis.text.y = element_blank(),
+        axis.ticks.y = element_blank(),
+        plot.title = element_text(hjust=0.5,size = 13),
+        axis.text.x = element_text(size = 7)) +
+  geom_text(aes(label=Count),size = 2,position = position_dodge(0.9),hjust = 0.5,vjust = 1)
+
+```
+
+
+## Question 4
+
+```{r}
+
+  # Distribution of accepted payment modes
+
+data %>% 
+  gather('Payment_Mode','Status',24:28) %>% 
+  filter(Status == 'Y') %>%
+  group_by(Payment_Mode) %>% 
+  summarise(Count = n()) %>% 
+  ggplot(aes(x=reorder(Payment_Mode,-Count),y=Count,fill=Payment_Mode)) +
+  geom_bar(stat='identity') +
+  geom_text(aes(label=Count),size=3,vjust=1)+
+  xlab('Payment Mode') +
+  ylab('Number of markets') +
+  labs(fill='Payment Mode') +
+  ggtitle('Distribution of accepted payment modes') +
+  scale_fill_brewer(palette = 'Set2') +
+  theme(plot.title = element_text(hjust=0.5,size=16))
+
+   # Most popular payment mode for each state
+
+states_map <- map_data('state')
+data %>% 
+  select(State,24:28) %>% 
+  mutate(Credit = ifelse(Credit == 'Y',1,0),
+         WIC = ifelse(WIC == 'Y',1,0),
+         WICcash = ifelse(WICcash == 'Y',1,0),
+         SFMNP = ifelse(SFMNP == 'Y',1,0),
+         SNAP = ifelse(SNAP == 'Y',1,0)) %>% 
+  group_by(State) %>% 
+  summarise(Credit = sum(Credit),
+            WIC = sum(WIC),
+            WICcash = sum(WICcash),
+            SFMNP = sum(SFMNP),
+            SNAP = sum(SNAP)) %>% 
+  gather('Type','Score',2:6) %>% 
+  group_by(State) %>% 
+  arrange(desc(Score)) %>% 
+  mutate(Rank = row_number(State)) %>% 
+  filter(Rank == 1) %>%
+  ungroup() %>% 
+  mutate(State = str_to_lower(State)) %>% 
+  left_join(states_map,.,by = c('region'='State')) %>% 
+  ggplot(aes(long, lat, group = group,fill = Type))+
+  geom_polygon(color = 'white')+
+  coord_map(projection = "albers", lat0 = 39, lat1 = 45)+
+  xlab('Longitude') +
+  ylab('Latitude') +
+  ggtitle('Most popular payment mode in each state') +
+  labs(fill='Payment Mode') +
+  scale_fill_brewer(palette = 'Paired') +
+  theme(plot.title = element_text(hjust=0.5,size=16),
+        panel.border = element_blank(),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank())
+
+
+   # Number of WIC accepted markets in east coast
+
+east_coast <- c('Maine','Florida','Delaware','Georgia','South Carolina','North Carolina','Virginia',  
+                'Maryland','New Jersey','Pennsylvania','New York','New Hampshire','Massachusetts','Connecticut',  
+                'Rhode Island')
+data %>% 
+  filter(WIC =='Y' & State %in% east_coast ) %>% 
+  group_by(State) %>% 
+  summarise(Count=n()) %>% 
+  ggplot(aes(x=reorder(State,Count),y=Count)) + geom_bar(stat='identity',fill='SteelBlue') +
+  coord_flip() +
+  geom_text(aes(label = Count),size = 3,vjust = 0.5,hjust=1) +
+  xlab('States') +
+  ylab('Number of markets')+
+  ggtitle('Markets accepting WIC welfare card in east coast') +
+  theme(plot.title = element_text(hjust=0.5,size=16))
+
+```
+
+## Question 5
+
+```{r}
+
+ # Distribution of number of farmers markets selling dairy products
+
+temp_three %>%
+  filter(Product_category == 'Dairy Products' & Value == 'Y') %>%
+  mutate(State = str_to_lower(State)) %>%
+  group_by(State,Product_category) %>% 
+  summarise(Count = n()) %>% 
+  left_join(states_map,.,by = c('region'='State')) %>% 
+  ggplot(aes(long, lat, group = group,fill = Count))+
+  geom_polygon(color = NA)+
+  coord_map(projection = "albers", lat0 = 39, lat1 = 45)+
+  xlab('Longitude') +
+  ylab('Latitude') +
+  scale_fill_viridis() +
+  ggtitle('Distribution of farmers markets that sells dairy products') +
+  labs(fill='Count') +
+  theme(plot.title = element_text(hjust=0.5),legend.title=element_text(size=10),
+        panel.border = element_blank(),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank())
+
+  # Markets that accept only credit v/s that accept only welfare cards
+
+northeast <- c('Connecticut','Delaware','Maine','Massachusetts','Maryland','New Hampshire',
+               'New Jersey','New York','Pennsylvania' ,'Rhode Island' ,'Vermont')
+rbind(
+  data %>%
+    filter(Credit == 'N' & str_detect(paste(WIC,WICcash,SFMNP,SNAP),'Y')) %>%
+    mutate(Status='Welfare Programs'),
+    data %>%
+      filter(Credit == 'Y' & WIC =='N' & WICcash == 'N' & SFMNP == 'N' & SNAP =='N') %>%
+      mutate(Status = 'Credit')) %>% 
+  group_by(State,Status) %>% 
+  summarise(Count = n()) %>% 
+  filter(State %in% northeast) %>% 
+  ggplot(aes(x=reorder(State,Count),y=Count,fill=Status,group = Status)) +
+  geom_bar(aes(group = Status),stat='identity',position = position_dodge(0.9)) +
+  geom_text(aes(label=Count),size=2,hjust=1.5,position = position_dodge(0.9)) +
+  coord_flip() +
+  xlab('State')+
+  ylab('Number of markets')+
+  scale_fill_brewer(palette = 'Paired') +
+  ggtitle('Markets that accept only credit v/s that accept only welfare cards in northeastern states') +
+  labs(fill='Payment Mode') +
+  theme(plot.title = element_text(hjust=0.5,size=12))
+
+```
